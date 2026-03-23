@@ -1,0 +1,16 @@
+import client from "./client";
+
+export async function registerUser(data) {
+    const response = await client.post("/api/auth/register", data);
+    return response.data;
+}
+
+export async function loginUser(data) {
+    const response = await client.post("/api/auth/login", data);
+    return response.data;
+}
+
+export async function getMe() {
+    const response = await client.get("/api/auth/me");
+    return response.data;
+}

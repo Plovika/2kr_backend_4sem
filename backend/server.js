@@ -137,20 +137,59 @@ app.post("/api/auth/login", async (req, res) => {
         return res.status(401).json({ message: "Неверные учетные данные" });
     }
 
-    const accessToken = jwt.sign(
-        {
-            sub: user.id,
-            email: user.email,
-        },
-        JWT_SECRET,
-        {
-            expiresIn: ACCESS_EXPIRES_IN,
-        }
-    );
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    refreshTokens.add(refreshToken);
 
     res.status(200).json({
         accessToken,
+        refreshToken,
     });
+});
+//маршрут рефреш
+app.post("/api/auth/refresh", (req, res) => {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+        return res.status(400).json({
+            error: "refreshToken is required",
+        });
+    }
+
+    if (!refreshTokens.has(refreshToken)) {
+        return res.status(401).json({
+            error: "Invalid refresh token",
+        });
+    }
+
+    try {
+        const payload = jwt.verify(refreshToken, REFRESH_SECRET);
+
+        const user = users.find((user) => user.id === payload.sub);
+
+        if (!user) {
+            return res.status(401).json({
+                error: "User not found",
+            });
+        }
+
+        refreshTokens.delete(refreshToken);
+
+        const newAccessToken = generateAccessToken(user);
+        const newRefreshToken = generateRefreshToken(user);
+
+        refreshTokens.add(newRefreshToken);
+
+        res.status(200).json({
+            accessToken: newAccessToken,
+            refreshToken: newRefreshToken,
+        });
+    } catch (error) {
+        return res.status(401).json({
+            error: "Invalid or expired refresh token",
+        });
+    }
 });
 
 
