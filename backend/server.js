@@ -2,10 +2,10 @@ const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+
 const app = express();
 
 app.use(cors());
-
 app.use(express.json());
 
 const users = [];
@@ -18,12 +18,13 @@ const REFRESH_SECRET = "refresh_secret";
 const ACCESS_EXPIRES_IN = "15m";
 const REFRESH_EXPIRES_IN = "7d";
 
-// функции чтобы генерировались токены
+// генерация токенов
 function generateAccessToken(user) {
     return jwt.sign(
         {
             sub: user.id,
             email: user.email,
+            role: user.role,
         },
         ACCESS_SECRET,
         {
@@ -37,6 +38,7 @@ function generateRefreshToken(user) {
         {
             sub: user.id,
             email: user.email,
+            role: user.role,
         },
         REFRESH_SECRET,
         {
@@ -44,7 +46,6 @@ function generateRefreshToken(user) {
         }
     );
 }
-//функция до выполнения маршрутов(есть ли токен, правильный не истек?)
 
 function authMiddleware(req, res, next) {
     const header = req.headers.authorization || "";
@@ -67,21 +68,25 @@ function authMiddleware(req, res, next) {
     }
 }
 
+function roleMiddleware(allowedRoles) {
+    return (req, res, next) => {
+        if (!req.user || !allowedRoles.includes(req.user.role)) {
+            return res.status(403).json({
+                error: "Forbidden",
+            });
+        }
+
+        next();
+    };
+}
 
 app.get("/", (req, res) => {
     res.send("Сервер работает");
 });
 
-const PORT = 3000;
-
-app.listen(PORT, () => {
-    console.log(`Server started on http://localhost:${PORT}`);
-});
-
 //регистрация
-
 app.post("/api/auth/register", async (req, res) => {
-    const { email, first_name, last_name, password } = req.body;
+    const { email, first_name, last_name, password, role } = req.body;
 
     if (!email || !first_name || !last_name || !password) {
         return res.status(400).json({ message: "Все поля обязательны" });
@@ -101,6 +106,8 @@ app.post("/api/auth/register", async (req, res) => {
         first_name,
         last_name,
         password: passwordHash,
+        role: role || "user",
+        isBlocked: false,
     };
 
     users.push(newUser);
@@ -112,12 +119,13 @@ app.post("/api/auth/register", async (req, res) => {
             email: newUser.email,
             first_name: newUser.first_name,
             last_name: newUser.last_name,
+            role: newUser.role,
+            isBlocked: newUser.isBlocked,
         },
     });
 });
 
-
-//  логин(емейл) (уже с токеном, практик 8)
+// логин
 app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
 
@@ -129,6 +137,10 @@ app.post("/api/auth/login", async (req, res) => {
 
     if (!user) {
         return res.status(401).json({ message: "Неверные учетные данные" });
+    }
+
+    if (user.isBlocked) {
+        return res.status(403).json({ message: "Пользователь заблокирован" });
     }
 
     const isPasswordCorrect = await bcrypt.compare(password, user.password);
@@ -147,7 +159,8 @@ app.post("/api/auth/login", async (req, res) => {
         refreshToken,
     });
 });
-//маршрут рефреш
+
+// рефреш токен
 app.post("/api/auth/refresh", (req, res) => {
     const { refreshToken } = req.body;
 
@@ -174,6 +187,12 @@ app.post("/api/auth/refresh", (req, res) => {
             });
         }
 
+        if (user.isBlocked) {
+            return res.status(403).json({
+                error: "User is blocked",
+            });
+        }
+
         refreshTokens.delete(refreshToken);
 
         const newAccessToken = generateAccessToken(user);
@@ -192,8 +211,8 @@ app.post("/api/auth/refresh", (req, res) => {
     }
 });
 
+// тек пользователь
 
-//auth me
 app.get("/api/auth/me", authMiddleware, (req, res) => {
     const userId = req.user.sub;
 
@@ -210,72 +229,206 @@ app.get("/api/auth/me", authMiddleware, (req, res) => {
         email: user.email,
         first_name: user.first_name,
         last_name: user.last_name,
+        role: user.role,
+        isBlocked: user.isBlocked,
     });
 });
-//создание товара
-app.post("/api/products", (req, res) => {
-    const { title, category, description, price } = req.body;
 
-    if (!title || !category || !description || price === undefined) {
-        return res.status(400).json({ message: "Все поля товара обязательны" });
+// товары
+
+// создание товара сэллер админ
+app.post(
+    "/api/products",
+    authMiddleware,
+    roleMiddleware(["seller", "admin"]),
+    (req, res) => {
+        const { title, category, description, price } = req.body;
+
+        if (!title || !category || !description || price === undefined) {
+            return res.status(400).json({ message: "Все поля товара обязательны" });
+        }
+
+        const newProduct = {
+            id: Date.now().toString(),
+            title,
+            category,
+            description,
+            price,
+        };
+
+        products.push(newProduct);
+
+        res.status(201).json(newProduct);
     }
+);
 
-    const newProduct = {
-        id: Date.now().toString(),
-        title,
-        category,
-        description,
-        price,
-    };
-
-    products.push(newProduct);
-
-    res.status(201).json(newProduct);
-});
-//получить все товары
-app.get("/api/products", (req, res) => {
-    res.status(200).json(products);
-});
-//получение товара по айди
-app.get("/api/products/:id",authMiddleware, (req, res) => {
-    const product = products.find((item) => item.id === req.params.id);
-
-    if (!product) {
-        return res.status(404).json({ message: "Товар не найден" });
+// получить все товары юзер селлер админ
+app.get(
+    "/api/products",
+    authMiddleware,
+    roleMiddleware(["user", "seller", "admin"]),
+    (req, res) => {
+        res.status(200).json(products);
     }
+);
 
-    res.status(200).json(product);
-});
+// товар по айди юзер селлэр и админ
+app.get(
+    "/api/products/:id",
+    authMiddleware,
+    roleMiddleware(["user", "seller", "admin"]),
+    (req, res) => {
+        const product = products.find((item) => item.id === req.params.id);
 
-//обновление товара
-app.put("/api/products/:id",authMiddleware, (req, res) => {
-    const product = products.find((item) => item.id === req.params.id);
+        if (!product) {
+            return res.status(404).json({ message: "Товар не найден" });
+        }
 
-    if (!product) {
-        return res.status(404).json({ message: "Товар не найден" });
+        res.status(200).json(product);
     }
+);
 
-    const { title, category, description, price } = req.body;
+// обновить товар  селлэр и админ
+app.put(
+    "/api/products/:id",
+    authMiddleware,
+    roleMiddleware(["seller", "admin"]),
+    (req, res) => {
+        const product = products.find((item) => item.id === req.params.id);
 
-    if (title !== undefined) product.title = title;
-    if (category !== undefined) product.category = category;
-    if (description !== undefined) product.description = description;
-    if (price !== undefined) product.price = price;
+        if (!product) {
+            return res.status(404).json({ message: "Товар не найден" });
+        }
 
-    res.status(200).json(product);
-});
-//удаление товара
-app.delete("/api/products/:id",authMiddleware, (req, res) => {
-    const productIndex = products.findIndex((item) => item.id === req.params.id);
+        const { title, category, description, price } = req.body;
 
-    if (productIndex === -1) {
-        return res.status(404).json({ message: "Товар не найден" });
+        if (title !== undefined) product.title = title;
+        if (category !== undefined) product.category = category;
+        if (description !== undefined) product.description = description;
+        if (price !== undefined) product.price = price;
+
+        res.status(200).json(product);
     }
+);
 
-    products.splice(productIndex, 1);
+// удалить товар админ
+app.delete(
+    "/api/products/:id",
+    authMiddleware,
+    roleMiddleware(["admin"]),
+    (req, res) => {
+        const productIndex = products.findIndex((item) => item.id === req.params.id);
 
-    res.status(200).json({ message: "Товар удалён" });
-});
-app.get("/api/users", (req, res) => {
-    res.json(users);
+        if (productIndex === -1) {
+            return res.status(404).json({ message: "Товар не найден" });
+        }
+
+        products.splice(productIndex, 1);
+
+        res.status(200).json({ message: "Товар удалён" });
+    }
+);
+
+// юзеры админ
+
+
+// список пользователей
+app.get(
+    "/api/users",
+    authMiddleware,
+    roleMiddleware(["admin"]),
+    (req, res) => {
+        const safeUsers = users.map((user) => ({
+            id: user.id,
+            email: user.email,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            role: user.role,
+            isBlocked: user.isBlocked,
+        }));
+
+        res.status(200).json(safeUsers);
+    }
+);
+
+// юзер по id
+app.get(
+    "/api/users/:id",
+    authMiddleware,
+    roleMiddleware(["admin"]),
+    (req, res) => {
+        const user = users.find((user) => user.id === req.params.id);
+
+        if (!user) {
+            return res.status(404).json({ message: "Пользователь не найден" });
+        }
+
+        res.status(200).json({
+            id: user.id,
+            email: user.email,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            role: user.role,
+            isBlocked: user.isBlocked,
+        });
+    }
+);
+
+// обновить пользователя
+app.put(
+    "/api/users/:id",
+    authMiddleware,
+    roleMiddleware(["admin"]),
+    (req, res) => {
+        const user = users.find((user) => user.id === req.params.id);
+
+        if (!user) {
+            return res.status(404).json({ message: "Пользователь не найден" });
+        }
+
+        const { email, first_name, last_name, role } = req.body;
+
+        if (email !== undefined) user.email = email;
+        if (first_name !== undefined) user.first_name = first_name;
+        if (last_name !== undefined) user.last_name = last_name;
+        if (role !== undefined) user.role = role;
+
+        res.status(200).json({
+            message: "Пользователь обновлён",
+            user: {
+                id: user.id,
+                email: user.email,
+                first_name: user.first_name,
+                last_name: user.last_name,
+                role: user.role,
+                isBlocked: user.isBlocked,
+            },
+        });
+    }
+);
+
+// заблокировать
+app.delete(
+    "/api/users/:id",
+    authMiddleware,
+    roleMiddleware(["admin"]),
+    (req, res) => {
+        const user = users.find((user) => user.id === req.params.id);
+
+        if (!user) {
+            return res.status(404).json({ message: "Пользователь не найден" });
+        }
+
+        user.isBlocked = true;
+
+        res.status(200).json({
+            message: "Пользователь заблокирован",
+        });
+    }
+);
+
+const PORT = 3000;
+
+app.listen(PORT, () => {
+    console.log(`Server started on http://localhost:${PORT}`);
 });

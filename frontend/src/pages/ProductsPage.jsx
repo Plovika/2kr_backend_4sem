@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getProducts, deleteProduct } from "../api/products";
 
-export default function ProductsPage() {
+export default function ProductsPage({user}) {
     const [products, setProducts] = useState([]);
     const [message, setMessage] = useState("");
 
@@ -47,18 +47,17 @@ export default function ProductsPage() {
                                 <p><strong>Описание:</strong> {product.description}</p>
                                 <p><strong>Цена:</strong> {product.price}</p>
                                 <div className="actions">
-                                    <p>
-                                        <Link to={`/products/${product.id}`}>Открыть товар</Link>
-                                    </p>
+                                    <Link to={`/products/${product.id}`}>Открыть товар</Link>
 
-                                    <p >
+                                    {(user?.role === "seller" || user?.role === "admin") && (
                                         <Link to={`/products/${product.id}/edit`}>Редактировать</Link>
-                                    </p>
+                                    )}
 
-                                    <button onClick={() => handleDelete(product.id)}>
-                                        Удалить
-                                    </button>
-
+                                    {user?.role === "admin" && (
+                                        <button onClick={() => handleDelete(product.id)}>
+                                            Удалить
+                                        </button>
+                                    )}
                                 </div>
 
 

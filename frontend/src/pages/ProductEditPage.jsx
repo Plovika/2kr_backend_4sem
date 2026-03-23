@@ -2,7 +2,22 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { getProductById, updateProduct } from "../api/products";
 
-export default function ProductEditPage() {
+export default function ProductEditPage({user}) {
+    if (!user) {
+        return (
+            <div className="container">
+                <p>Пользователь не авторизован</p>
+            </div>
+        );
+    }
+
+    if (user.role !== "seller" && user.role !== "admin") {
+        return (
+            <div className="container">
+                <p>Доступ запрещён</p>
+            </div>
+        );
+    }
     const { id } = useParams();
 
     const [form, setForm] = useState({

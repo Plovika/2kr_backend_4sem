@@ -1,7 +1,22 @@
 import { useState } from "react";
 import { createProduct } from "../api/products";
 
-export default function ProductCreatePage() {
+export default function ProductCreatePage({user}) {
+    if (!user) {
+        return (
+            <div className="container">
+                <p>Пользователь не авторизован</p>
+            </div>
+        );
+    }
+
+    if (user.role !== "seller" && user.role !== "admin") {
+        return (
+            <div className="container">
+                <p>Доступ запрещён</p>
+            </div>
+        );
+    }
     const [form, setForm] = useState({
         title: "",
         category: "",
