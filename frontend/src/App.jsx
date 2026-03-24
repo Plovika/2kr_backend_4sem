@@ -13,18 +13,21 @@ function HomePage({ user, message }) {
     return (
         <div className="container">
 
+            <div className="container">
+                <p>
+                    <Link to="/register">Регистрация</Link>
+                </p>
 
-            <p>
-                <Link to="/register">Регистрация</Link>
-            </p>
+                <p>
+                    <Link to="/login">Вход</Link>
+                </p>
 
-            <p>
-                <Link to="/login">Вход</Link>
-            </p>
+            </div>
+
 
             {user && (
-                <>
-                    <p>
+                <div className = "container">
+                    <p >
                         <Link to="/products">Товары</Link>
                     </p>
 
@@ -39,11 +42,11 @@ function HomePage({ user, message }) {
                             <Link to="/users">Пользователи</Link>
                         </p>
                     )}
-                </>
+                </div>
             )}
 
             {user ? (
-                <div>
+                <div className="container">
                     <h3>Текущий пользователь:</h3>
                     <p>Email: {user.email}</p>
                     <p>Имя: {user.first_name}</p>
